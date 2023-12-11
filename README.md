@@ -1,8 +1,4 @@
-The project is an RFID based payment system that is designed to allow users to 
-make cashless payments by scanning RFID tags on products.
-This system provides a fast and convenient way for customers to make payments 
-at various outlets. In this project, we have integrated hardware and software to 
-develop an RFID based payment system that can be used in fun parks.
+
 **Overview**: 
 we faced the daunting task of integrating RFID technology with Arduino and other 
 peripherals. Our initial system required an internet connection to fetch data from 
