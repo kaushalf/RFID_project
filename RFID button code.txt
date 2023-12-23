@@ -1,0 +1,235 @@
+#include "SPI.h"
+#include "MFRC522.h"
+#include <LiquidCrystal_I2C.h>
+#include <Ethernet.h>
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+#define SS_PIN 3
+#define RST_PIN 9
+
+MFRC522 rfid(SS_PIN, RST_PIN);
+MFRC522::MIFARE_Key key;
+
+byte mac[] = { 0x00, 0xAB, 0xBC, 0xCC, 0xDE, 0x01 };
+int num_person = 1;
+void mutipule_entry_config();
+
+void setup() {
+  pinMode(5, INPUT);
+  lcd.init();
+  lcd.backlight();
+  
+  Serial.begin(9600);
+  SPI.begin();
+  rfid.PCD_Init();
+  pinMode(A2, OUTPUT);
+  pinMode(A3, OUTPUT);
+  if (Ethernet.begin(mac) == 0) {
+    Serial.println("Failed to obtaining an IP address using DHCP");
+     digitalWrite(A2, HIGH);
+    lcd.clear();
+    lcd.setCursor (0, 0);
+    lcd.print("IP not found");
+     delay(3000);
+    digitalWrite(A2, LOW);
+    while(true);
+  }
+  Serial.println("Ethernet Configured");
+  delay(500);
+}
+
+void loop() {
+  lcd.backlight();
+  
+  char data[40]="";
+  num_person = 1;
+  lcd.clear();
+  lcd.backlight();
+  lcd.setCursor (0,0);
+  lcd.print("waiting for card..");
+  lcd.setCursor (0,1);
+  lcd.print("Person - ");
+  lcd.print(num_person);
+  Serial.println("waiting for card...");
+  
+ 
+
+   if(digitalRead(5) == 1){
+      while(digitalRead(5) == 1);
+      num_person++;
+      lcd.clear();
+      lcd.setCursor (0,0);
+      lcd.print("waiting for card..");
+      lcd.setCursor (0,1);
+      lcd.print("Person - ");
+      lcd.print(num_person);
+      //mutipule_entry_config();
+   }
+
+   if(digitalRead(6) == 1){
+      while(digitalRead(6) == 1);
+      num_person--;
+      lcd.clear();
+      lcd.setCursor (0,0);
+      lcd.print("waiting for card..");
+      lcd.setCursor (0,1);
+      lcd.print("Person - ");
+      lcd.print(num_person);
+      //mutipule_entry_config();
+   }
+    rfid.PCD_Init();
+  while (!rfid.PICC_IsNewCardPresent() || !rfid.PICC_ReadCardSerial()){
+  lcd.backlight();
+    ;
+  }
+  MFRC522::PICC_Type piccType = rfid.PICC_GetType(rfid.uid.sak);
+  if (piccType != MFRC522::PICC_TYPE_MIFARE_MINI &&
+      piccType != MFRC522::PICC_TYPE_MIFARE_1K &&
+      piccType != MFRC522::PICC_TYPE_MIFARE_4K) {
+    Serial.println(F("Your tag is not of type MIFARE Classic."));
+    return;
+  }
+
+  unsigned long int cardid=0;
+  for (byte i = 0; i < 4; i++) {
+    cardid <<= 8;
+    cardid |= rfid.uid.uidByte[i];
+  }
+  Serial.print("cardid= ");
+  Serial.println(cardid);
+   sprintf(data,"user_name=GMM-01,%lu,%d",cardid,num_person);
+
+  Serial.print("data : ");
+  Serial.println(data);
+  sendData(data);
+  delay(10000);
+}
+
+void sendData(char *data){
+
+  char httpdata[100]="";
+  int i=0;
+  EthernetClient client;
+  Serial.println("Trying to connect server");
+  //ttp://park.insidelogicsoft.com/machine_transaction_api.php
+  if (client.connect("park.insidelogicsoft.com", 80)) 
+  { // REPLACE WITH YOUR SERVER ADDRESS
+
+      Serial.println("Connected to server");
+      client.println("POST /machine_transaction_api.php HTTP/1.1");//REPLACE WITH YOUR URLS
+      client.println("Host: www.park.insidelogicsoft.com");
+      client.println("Content-Type: application/x-www-form-urlencoded");
+      client.println("Connection: close");
+      client.print("Content-Length:");
+      client.println(strlen(data));
+      client.println();
+      client.print(data);
+      delay(1000);
+  
+      while(client.connected()){
+        if(client.available()){
+          httpdata[i++] = (char)client.read();
+        } else {
+          Serial.println("Client Not available");
+          break;
+        }
+         if(httpdata[i-1]==':' || httpdata[i-1]==';') i=0;
+         if(i>=99)break; 
+      }
+      httpdata[i]=0;
+  } else {
+    Serial.println("Client connect failed");
+    digitalWrite(A2, HIGH);
+    lcd.clear();
+    lcd.setCursor (0, 0);
+    lcd.print(" Network failed");
+     delay(3000);
+    digitalWrite(A2, LOW);
+  }
+    
+  lcd.backlight();
+  
+ if(strstr(httpdata , "Card")!=NULL){
+    digitalWrite(A2, HIGH);
+    Serial.println("Invalid Card");
+    lcd.clear();
+    lcd.setCursor (0,0);
+    lcd.print("Invalid Card");
+    
+    delay(3000);
+    digitalWrite(A2, LOW);
+    delay(3000);
+ }else if(strstr(httpdata , "CB")!=NULL){
+  char *str = strstr(httpdata , "CB");
+  Serial.println(str);
+
+int curr_bal ;
+int ride_cost;
+int rem_bal;
+char string[30];
+sscanf(str, "CB - %d, DR - %d, RB - %d Transaction %s", &curr_bal , &ride_cost , &rem_bal , string);
+ digitalWrite(A3, HIGH);
+  Serial.print("Current Balance - ");
+  Serial.println(curr_bal);
+  Serial.print("ride_cost - ");
+  Serial.println(ride_cost);
+  Serial.print("Remain - ");
+  Serial.println(rem_bal);
+  
+  lcd.clear();
+  lcd.setCursor (0,0);
+  lcd.print("ride cost- ");
+  lcd.print(ride_cost);
+  lcd.print("rs");
+ 
+  lcd.setCursor (0,1);
+  lcd.print("rem bal - ");
+  lcd.print(rem_bal);
+  lcd.print("rs");
+
+  delay (3000);
+  digitalWrite(A3, LOW);
+ }
+ else if(strstr(httpdata , "insufficient balance")!=NULL){
+    digitalWrite(A2, HIGH);
+    lcd.clear();
+    lcd.setCursor (0,0);
+    lcd.print("insufficient balance");
+    Serial.println("insufficient balance");
+    delay (1000);
+    digitalWrite(A2, LOW);
+  }
+  else if(strstr(httpdata , "not")!=NULL){
+    digitalWrite(A2, HIGH);
+    lcd.clear();////////////
+    lcd.setCursor (0,0);
+    lcd.print("Balance not");
+    lcd.setCursor (0,1);
+    lcd.print("Available");
+    Serial.println("Balance not Available");
+    delay (1000);
+    digitalWrite(A2, LOW);
+  }
+}
+void mutipule_entry_config(){
+  lcd.backlight();
+
+  
+  //Serial.println("In click");
+  //while(digitalRead(5) == HIGH);
+  while(digitalRead(5) == LOW){
+    if(digitalRead(6) == HIGH){
+      while(digitalRead(6) == HIGH);
+      num_person++;
+      lcd.setCursor (0,1);
+      lcd.print("person - ");
+      lcd.print(num_person);
+      delay(1000);
+      //Serial.print("person - ");
+      //Serial.println(num_person);
+    }
+    
+  }
+  while(digitalRead(5) == HIGH);
+  //Serial.println("OUT click");
+}
